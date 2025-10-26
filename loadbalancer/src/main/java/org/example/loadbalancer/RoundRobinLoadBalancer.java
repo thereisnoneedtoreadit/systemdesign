@@ -20,7 +20,7 @@ public class RoundRobinLoadBalancer implements LoadBalancer {
         validate(server);
         withLock(() -> {
             Server updated = registry.put(server.id, server);
-            if (updated != null) {
+            if (updated == null) {
                 queue.addLast(server);
             }
         });
