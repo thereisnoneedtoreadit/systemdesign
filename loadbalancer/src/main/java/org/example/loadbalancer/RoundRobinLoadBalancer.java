@@ -12,7 +12,7 @@ import java.util.function.Supplier;
 public class RoundRobinLoadBalancer implements LoadBalancer {
 
     private final Map<String, Server> registry = new HashMap<>();
-    private final Deque<Server> queue = new ArrayDeque<>();
+    private final Deque<String> queue = new ArrayDeque<>();
     private final ReentrantLock lock = new ReentrantLock();
 
     @Override
@@ -21,7 +21,7 @@ public class RoundRobinLoadBalancer implements LoadBalancer {
         withLock(() -> {
             Server updated = registry.put(server.id, server);
             if (updated == null) {
-                queue.addLast(server);
+                queue.addLast(server.id);
             }
         });
     }
@@ -45,16 +45,17 @@ public class RoundRobinLoadBalancer implements LoadBalancer {
     }
 
     private Server getAndEnqueueHealthyServer() {
-        for(int i = 0; i < queue.size(); i++) {
-            Server candidate = queue.pollFirst();
-            if (!registry.containsKey(candidate.id)) {
+        int attempts = queue.size();
+        for(int i = 0; i < attempts; i++) {
+            Server candidate = registry.get(queue.pollFirst());
+            if (candidate == null) {
                 continue;
             }
             if (!candidate.healthy) {
-                queue.addLast(candidate);
+                queue.addLast(candidate.id);
                 continue;
             }
-            queue.addLast(candidate);
+            queue.addLast(candidate.id);
             return candidate;
         }
         return null;
