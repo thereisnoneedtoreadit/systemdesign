@@ -2,24 +2,28 @@ package org.example;
 
 import lombok.Data;
 import org.example.exception.AccountNotFoundException;
+import org.example.exception.LockAcquisitionException;
 import org.example.model.Account;
 import org.example.model.Transaction;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class AccountDAO {
 
     private final Map<String, AccountRow> accounts = new HashMap<>();
+    private final Duration defaultLockTimeout = Duration.ofSeconds(5);
 
     public Optional<Account> getForUpdate(String accountId, Transaction t) {
         final var row = accounts.get(accountId);
         if (row == null) {
             return Optional.empty();
         }
-        row.lock(t);
+        row.lock(t, defaultLockTimeout);
         return Optional.of(row.getAccount());
     }
 
@@ -28,7 +32,7 @@ public class AccountDAO {
         if (row == null) {
             throw new AccountNotFoundException(account.id());
         }
-        row.lock(t);
+        row.lock(t, defaultLockTimeout);
         accounts.put(account.id(), row);
     }
 
@@ -50,17 +54,28 @@ public class AccountDAO {
         private Transaction heldBy;
         private ReentrantLock lock = new ReentrantLock();
 
-        public void lock(Transaction t) {
+        public void lock(Transaction t, Duration timeout) {
             if (t.equals(heldBy)) {
                 return;
             }
-            this.lock.lock();
+            if (!tryLock(timeout)) {
+                throw new LockAcquisitionException();
+            }
             this.heldBy = t;
         }
 
         public void unlock() {
             this.lock.unlock();
             this.heldBy = null;
+        }
+
+        private boolean tryLock(Duration timeout) {
+            try {
+                return this.lock.tryLock(timeout.getSeconds(), TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
         }
     }
 
