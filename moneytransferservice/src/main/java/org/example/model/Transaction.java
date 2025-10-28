@@ -12,4 +12,8 @@ import java.util.UUID;
 public class Transaction {
     private String id = UUID.randomUUID().toString();
     private List<Account> accountSnapshots = new ArrayList<>();
+
+    public void addAccountSnapshot(Account account) {
+        accountSnapshots.add(account);
+    }
 }

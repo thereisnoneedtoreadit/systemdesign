@@ -20,8 +20,8 @@ public class AccountService {
                     .getForUpdate(toId, transaction)
                     .orElseThrow(() -> new AccountNotFoundException(toId));
 
-            transaction.accountSnapshots().add(from);
-            transaction.accountSnapshots().add(to);
+            transaction.addAccountSnapshot(from);
+            transaction.addAccountSnapshot(to);
 
             validateBalance(from, amount);
 
