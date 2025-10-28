@@ -12,11 +12,4 @@ import java.util.UUID;
 public class Transaction {
     private String id = UUID.randomUUID().toString();
     private List<Account> accountSnapshots = new ArrayList<>();
-
-    @Data
-    @Accessors(fluent = true)
-    private static class AccountSnapshot {
-        private Account from;
-        private Account to;
-    }
 }
