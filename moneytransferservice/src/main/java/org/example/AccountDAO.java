@@ -1,82 +1,65 @@
 package org.example;
 
-import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.example.exception.AccountNotFoundException;
-import org.example.exception.LockAcquisitionException;
 import org.example.model.Account;
-import org.example.model.Transaction;
+import org.example.model.AccountRow;
+import org.example.model.AccountTransaction;
 
-import java.time.Duration;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 
+@Slf4j
 public class AccountDAO {
 
-    private final Map<String, AccountRow> accounts = new HashMap<>();
-    private final Duration defaultLockTimeout = Duration.ofSeconds(5);
+    private final Map<UUID, AccountRow> accounts = new ConcurrentHashMap<>();
 
-    public Optional<Account> getForUpdate(String accountId, Transaction t) {
+    public Account get(UUID accountId) {
         final var row = accounts.get(accountId);
         if (row == null) {
-            return Optional.empty();
+            throw new AccountNotFoundException(accountId);
         }
-        row.lock(t, defaultLockTimeout);
-        return Optional.of(row.getAccount());
+        return row.getAccount().copy();
     }
 
-    public void update(Account account, Transaction t) {
-        final var row = accounts.get(account.id());
+    public Account getForUpdate(UUID accountId, AccountTransaction t) {
+        final var row = accounts.get(accountId);
         if (row == null) {
-            throw new AccountNotFoundException(account.id());
+            throw new AccountNotFoundException(accountId);
         }
-        row.lock(t, defaultLockTimeout);
-        accounts.put(account.id(), row);
+        row.lock(t, t.getLockTimeout());
+        log.info("locked for update account {}. transaction {}", accountId, t.getId());
+        return row.getAccount().copy();
     }
 
-    public void rollback(Transaction t) {
-        t.accountSnapshots().forEach(snapshot -> update(snapshot, t));
+    public void save(Account account, AccountTransaction t) {
+        t.attach(account);
+        log.info("saved account {}. transaction {}", account.id(), t.getId());
     }
 
-    public void commit(Transaction t) {
-        accounts.values().forEach(row -> {
-            if (t.equals(row.heldBy)) {
-                row.unlock();
-            }
-        });
+    public void rollback(AccountTransaction t) {
+        persistAndRelease(t.getSnapshots(), t);
+        log.info("rolled back transaction {}", t.getId());
     }
 
-    @Data
-    private static class AccountRow {
-        private Account account;
-        private Transaction heldBy;
-        private ReentrantLock lock = new ReentrantLock();
+    public void commit(AccountTransaction t) {
+        persistAndRelease(t.getAttached(), t);
+        log.info("committed transaction {}", t.getId());
+    }
 
-        public void lock(Transaction t, Duration timeout) {
-            if (t.equals(heldBy)) {
-                return;
-            }
-            if (!tryLock(timeout)) {
-                throw new LockAcquisitionException();
-            }
-            this.heldBy = t;
-        }
-
-        public void unlock() {
-            this.lock.unlock();
-            this.heldBy = null;
-        }
-
-        private boolean tryLock(Duration timeout) {
-            try {
-                return this.lock.tryLock(timeout.getSeconds(), TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
+    private void persistAndRelease(List<Account> accs, AccountTransaction t) {
+        accs
+                .forEach(account -> accounts.compute(account.id(), (id, row) -> {
+                    if (row == null) {
+                        return new AccountRow(account.copy());
+                    } else {
+                        row.update(account, t);
+                        row.release();
+                        return row;
+                    }
+                }));
     }
 
 }
