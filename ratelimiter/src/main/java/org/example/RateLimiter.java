@@ -1,7 +1,9 @@
 package org.example;
 
-public class RateLimiter {
-    public static void main(String[] args) {
+import java.io.Closeable;
 
-    }
+public interface RateLimiter extends Closeable {
+
+    boolean allow(String key);
+
 }
