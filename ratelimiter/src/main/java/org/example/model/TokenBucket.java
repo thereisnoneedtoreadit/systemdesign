@@ -1,32 +1,38 @@
 package org.example.model;
 
 import lombok.Data;
+import lombok.Getter;
+import lombok.SneakyThrows;
 
 import java.io.Closeable;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-@Data
+@Getter
 public class TokenBucket implements Closeable {
     private final Configuration configuration;
-    private AtomicInteger balance;
-    private AtomicReference<Instant> lastRefilled;
-
-    private AtomicBoolean closed;
+    private final ExecutorService refiller;
+    private final AtomicInteger balance;
+    private final AtomicReference<Instant> lastRefilled;
+    private final AtomicBoolean closed;
 
     public TokenBucket(Configuration configuration) {
         this.configuration = configuration;
+        this.refiller = Executors.newSingleThreadExecutor();
         this.balance = new AtomicInteger(configuration.capacity);
         this.lastRefilled = new AtomicReference<>(Instant.now());
-        doRefilling();
+        this.closed = new AtomicBoolean(false);
+        refiller.submit(this::doRefilling);
     }
 
     public boolean consume() {
-        return balance.decrementAndGet() >= 0;
+        return balance.getAndUpdate(b -> Math.max(b - 1, 0)) >= 0;
     }
 
     @Override
@@ -34,13 +40,15 @@ public class TokenBucket implements Closeable {
         closed.set(true);
     }
 
+    @SneakyThrows
     private void doRefilling() {
         while (!closed.get()) {
             if (refillRequired()) {
-                this.balance.set(configuration.capacity);
+                this.balance.getAndUpdate(b -> Math.min(b + configuration.refill, configuration.capacity));
                 this.lastRefilled.set(Instant.now());
             }
         }
+        Thread.sleep(1000);
     }
 
     private boolean refillRequired() {
