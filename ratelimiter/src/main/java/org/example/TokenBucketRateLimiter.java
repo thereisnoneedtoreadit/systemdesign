@@ -23,11 +23,6 @@ public class TokenBucketRateLimiter implements RateLimiter {
         return new TokenBucket(new TokenBucket.Configuration(rate.requests, rate.requests, rate.per));
     }
 
-    @Override
-    public void close() {
-        buckets.values().forEach(TokenBucket::close);
-    }
-
     public record Rate(int requests, TimeUnit per) {}
 
 }
